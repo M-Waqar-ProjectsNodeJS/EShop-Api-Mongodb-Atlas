@@ -1,7 +1,35 @@
 const express = require("express");
 const Product = require("../models/product");
 const Category = require("../models/category");
+const multer = require("multer");
+const path = require("path");
 const router = express.Router();
+// File types which is allowed to upload
+const FILE_TYPE_MAP = {
+  "image/png": "png",
+  "image/jpeg": "jpeg",
+  "image/jpg": "jpg",
+};
+// Disk Storage to upload the files
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const isValid = FILE_TYPE_MAP[file.mimetype];
+    let uploadError = new Error("invalid image type in the request");
+
+    if (isValid) {
+      uploadError = null;
+    }
+    cb(uploadError, "public/uploads");
+  },
+  filename: function (req, file, cb) {
+    const name = path.parse(file.originalname).name;
+    const fileName = name.split(" ").join("-");
+    const extension = FILE_TYPE_MAP[file.mimetype];
+    cb(null, `${fileName}-${Date.now()}.${extension}`);
+  },
+});
+
+const uploadOptions = multer({ storage: storage });
 
 router.get("/", async (req, res, next) => {
   try {
@@ -53,17 +81,24 @@ router.get("/get/featured/:count", async (req, res, next) => {
     });
   }
 });
-router.post("/", async (req, res, next) => {
+router.post("/", uploadOptions.single("image"), async (req, res, next) => {
   try {
     let category = await Category.findById(req.body.category);
     if (!category)
       return res.status(400).json({ message: "invalid category id" });
 
+    const file = req.file;
+    if (!file)
+      return res.status(400).json({ message: "No image in the request" });
+
+    const fileName = file.filename;
+    const basePath = `${req.protocol}://${req.get("host")}/public/uploads/`;
+
     let product = new Product({
       name: req.body.name,
       description: req.body.description,
       richDescription: req.body.richDescription,
-      image: req.body.image,
+      image: `${basePath}${fileName}`,
       images: req.body.images,
       brand: req.body.brand,
       price: req.body.price,
@@ -122,9 +157,7 @@ router.put("/", async (req, res, next) => {
       await product.save();
       res.status(201).json(product);
     } else {
-      return res
-        .status(404)
-        .json({ message: "Product with given id not found" });
+      res.status(404).json({ message: "Product with given id not found" });
     }
   } catch (error) {
     res.status(500).json({
@@ -132,5 +165,36 @@ router.put("/", async (req, res, next) => {
     });
   }
 });
+
+router.put(
+  "/image-gallary/:id",
+  uploadOptions.array("images", 10),
+  async (req, res, next) => {
+    try {
+      const basePath = `${req.protocol}://${req.get("host")}/public/uploads/`;
+      const files = req.files;
+      let imagesPaths = [];
+
+      if (files) {
+        files.map((file) => {
+          imagesPaths.push(`${basePath}${file.filename}`);
+        });
+      }
+
+      let product = await Product.findById(req.params.id);
+      if (product) {
+        product.images = imagesPaths;
+        await product.save();
+        res.status(201).json(product);
+      } else {
+        res.status(404).json({ message: "Product with given id not found" });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: error,
+      });
+    }
+  }
+);
 
 module.exports = router;
