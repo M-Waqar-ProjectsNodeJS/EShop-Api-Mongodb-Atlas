@@ -18,7 +18,7 @@ app.options("*", cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan("tiny"));
-//app.use(authJWT());
+app.use(authJWT());
 
 app.use(`${apiUrl}/category`, categoryRoute);
 app.use(`${apiUrl}/product`, productsRoute);
